@@ -1,0 +1,4 @@
+(library
+    (name falconn)
+    (cxx_flags -std=c++11 -march=native -O3 -I %{project_root}/../../submodules/falconn/external/eigen -I %{project_root}/../../submodules/falconn/external/simple-serializer -I %{project_root}/../../submodules/falconn/src/include -pthread)
+    (cxx_names falconn_stubs))

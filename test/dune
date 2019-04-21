@@ -1,0 +1,3 @@
+(test
+    (name falconn_test)
+    (libraries falconn oUnit))
