@@ -173,7 +173,9 @@ int find_num_probes(Table *table, vector<Point> data, int start)
     vector<int> answers;
     gen_answers(data, sample_vec, &answers);
 
-    return _find_num_probes(table, sample_vec, answers, start);
+    int res = _find_num_probes(table, sample_vec, answers, start);
+    free(sample);
+    return res;
 }
 
 Point unpack_point(value _q, size_t width) {
@@ -214,7 +216,7 @@ extern "C" {
         return res;
     }
 
-    void load_dataset(value inp, vector<Point> *outp, int *n_dims)
+    int load_dataset(value inp, vector<Point> *outp, int *n_dims)
     {
         camlassert((Caml_ba_array_val(inp)->flags & BIGARRAY_KIND_MASK) == CAML_BA_FLOAT32);
         int dim_x = Caml_ba_array_val(inp)->dim[0];
@@ -238,15 +240,15 @@ extern "C" {
             p.normalize();
             outp->push_back(p);
         }
+
+        return dim_y;
     }
 
     value call_index_create(
-        value _dataset_size,
         value _distance_function, value _is_dense, value _l, value _dataset)
     {
-        CAMLparam5(_dataset_size, _distance_function, _is_dense, _l, _dataset);
+        CAMLparam4(_distance_function, _is_dense, _l, _dataset);
 
-        long dataset_size = Val_long(_dataset_size);
         bool is_dense = Val_bool(_is_dense);
         long l = Val_long(_l);
 
@@ -267,7 +269,7 @@ extern "C" {
         
         vector<Point> dataset;
         int dataset_dimension;
-        load_dataset(_dataset, &dataset, &dataset_dimension);
+        int dataset_size = load_dataset(_dataset, &dataset, &dataset_dimension);
 
         LSHConstructionParameters params = get_default_parameters<Point>(
             dataset_size, dataset_dimension, distance_function, is_dense);
