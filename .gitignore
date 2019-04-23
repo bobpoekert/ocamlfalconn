@@ -1,2 +1,4 @@
 .merlin
 _build/
+submodules/falconn/obj
+submodules/falconn/test_bin

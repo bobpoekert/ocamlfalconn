@@ -1,6 +1,6 @@
 (library
     (name falconn)
     (libraries bigarray)
-    (cxx_flags -std=c++11 -march=native -O3 -I %{project_root}/../../submodules/falconn/external/eigen -I %{project_root}/../../submodules/falconn/external/simple-serializer -I %{project_root}/../../submodules/falconn/src/include -pthread -x c++)
+    (cxx_flags -std=c++11 -march=native -O0 -I %{project_root}/../../submodules/falconn/external/eigen -I %{project_root}/../../submodules/falconn/external/simple-serializer -I %{project_root}/../../submodules/falconn/src/include -pthread -x c++ -g)
     (c_library_flags -lstdc++)
     (cxx_names falconn_stubs))
