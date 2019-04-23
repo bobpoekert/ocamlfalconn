@@ -18,7 +18,7 @@ let create
   ?(num_probes=0) (* zero indicates that parameter search should be run to find the optimal value *)
   dataset = 
   if num_probes != 0 && num_probes < l then
-    raise (Invalid_argument "num_probes must be >= l");
+    raise (Invalid_argument (Printf.sprintf "num_probes must be >= l: %d for %d" num_probes l));
   let idx = _create dfunc is_dense l num_probes dataset in 
   (idx, dataset)
 

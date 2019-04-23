@@ -30,14 +30,21 @@ using falconn::PlainArrayPointSet;
 #include <caml/custom.h>
 #include <caml/fail.h>
 #include <caml/bigarray.h>
+#include <caml/threads.h>
 
-typedef DenseVector<float> Point;
+typedef int32_t Key;
+typedef float Value;
+
+typedef DenseVector<Value> Point;
 typedef LSHNearestNeighborTable<Point> Table;
 typedef LSHNearestNeighborQuery<Point> Cursor;
-typedef PlainArrayPointSet<float> InnerPlainArrayPointSet;
+typedef PlainArrayPointSet<Value> InnerPlainArrayPointSet;
 
 #define BEGIN_CXX_EX try {
 #define END_CXX_EX } catch(std::exception &e) { caml_failwith(e.what()); } catch(...) { caml_failwith("unknown c++ exception");}
+
+#define GIL_RELEASE_BEGIN caml_release_runtime_system(); try {
+#define GIL_RELEASE_END } catch(...) { caml_acquire_runtime_system(); throw; } caml_acquire_runtime_system();
 
 #define Index_val(v) (*((Index *) Data_custom_val(v)))
 
@@ -46,7 +53,6 @@ typedef PlainArrayPointSet<float> InnerPlainArrayPointSet;
 #define camlassert(v) if (!(v)) caml_failwith("assert failed: " xstr(v))
 
 #define NUM_PROBES_SAMPLE_SIZE 4096
-#if 0
 void get_sample_indexes(size_t *res, size_t sample_size, size_t range) {
     size_t *buffer = (size_t *) malloc(sizeof(size_t) * range);
     for (size_t i=0; i < range; i++) {
@@ -102,7 +108,7 @@ double evaluate_num_probes(LSHNearestNeighborTable<Point> *table,
       table->construct_query_object(num_probes);
   int outer_counter = 0;
   int num_matches = 0;
-  vector<int32_t> candidates;
+  vector<Key> candidates;
   for (const auto &query : queries) {
     query_object->get_candidates_with_duplicates(query, &candidates);
     for (auto x : candidates) {
@@ -161,8 +167,7 @@ void random_sample(value inp, Point *res, size_t sample_size)
     int dim_x = Caml_ba_array_val(inp)->dim[1];
     float *inp_data = (float *) Caml_ba_data_val(inp);
     size_t *sample_idxes = (size_t *) malloc(sizeof(size_t) * sample_size);
-    size_t range = inp.size();
-    get_sample_indexes(sample_idxes, sample_size, range);
+    get_sample_indexes(sample_idxes, sample_size, dim_y);
     for (size_t i = 0; i < sample_size; i++)
     {
         Point p;
@@ -178,25 +183,33 @@ void random_sample(value inp, Point *res, size_t sample_size)
 
 int find_num_probes(Table *table, value data, int start)
 {
-    size_t data_size = data.size();
+    size_t data_size = Caml_ba_array_val(data)->dim[0];
     vector<int> answers;
     vector<Point> sample_vec;
-    vector<Point> *inp;
     if (data_size > NUM_PROBES_SAMPLE_SIZE) {
         Point *sample = (Point *) malloc(sizeof(Point) * NUM_PROBES_SAMPLE_SIZE);
         random_sample(data, sample, NUM_PROBES_SAMPLE_SIZE);
         sample_vec.assign(sample, sample + NUM_PROBES_SAMPLE_SIZE);
         free(sample);
-        inp = &sample_vec;
     } else {
-        inp = &data;
+        size_t width = Caml_ba_array_val(data)->dim[1];
+        float *inp_data = (float *) Caml_ba_data_val(data);
+        sample_vec.resize(data_size);
+        size_t off = 0;
+        for (size_t y=0; y < data_size; y++) {
+            Point p;
+            for (size_t x; x < width; x++) {
+                p[x] = inp_data[off];
+                off++;
+            }
+            sample_vec[y] = p;
+        }
     }
     
-    gen_answers(data, data, &answers);
+    gen_answers(sample_vec, sample_vec, &answers);
 
     return _find_num_probes(table, sample_vec, answers, start);
 }
-#endif
 
 PlainArrayPointSet<float> unpack_bigarray(value inp) {
     camlassert((Caml_ba_array_val(inp)->flags & BIGARRAY_KIND_MASK) == CAML_BA_FLOAT32);
@@ -211,10 +224,43 @@ PlainArrayPointSet<float> unpack_bigarray(value inp) {
     return res;
 }
 
-Table *construct_table_dense_float(value points, const LSHConstructionParameters &params) {
-    InnerPlainArrayPointSet converted_points = unpack_bigarray(points);
-    return construct_table<Point, int32_t, InnerPlainArrayPointSet>(converted_points, params).release();
+Table *construct_table_dense_float(value points, const LSHConstructionParameters &params, float **res_ptr) {
+    camlassert((Caml_ba_array_val(points)->flags & BIGARRAY_KIND_MASK) == CAML_BA_FLOAT32);
+    camlassert(Caml_ba_array_val(points)->num_dims == 2);
+    size_t dim_y = Caml_ba_array_val(points)->dim[0];
+    size_t dim_x = Caml_ba_array_val(points)->dim[1];
+    float *inp_data = (float *) Caml_ba_data_val(points);
+    PlainArrayPointSet<Value> converted;
+
+    // defensive copy
+    size_t data_size = dim_x * dim_y * sizeof(float);
+    float *copied_data = (float *) malloc(data_size);
+    memcpy(copied_data, inp_data, data_size);
+
+    *res_ptr = copied_data;
+
+    converted.num_points = dim_y;
+    converted.dimension = dim_x;
+    converted.data = copied_data;
+
+    Table *res;
+    GIL_RELEASE_BEGIN
+    res = construct_table<Point, Key, InnerPlainArrayPointSet>(converted, params).release();
+    GIL_RELEASE_END
+    return res;
 }
+
+Point unpack_point(value _q, size_t width) {
+    camlassert(Tag_val(_q) == Double_array_tag);
+    camlassert(Wosize_val(_q) == width);
+    Point p;
+    p.resize(width);
+    for (size_t i=0; i < width; i++) {
+        p[i] = Double_field(_q, i);
+    }
+    return p;
+}
+
 
 extern "C" {
 
@@ -223,12 +269,14 @@ extern "C" {
         Cursor *cursor;
         size_t dimension;
         int num_probes;
+        float *data_ptr;
     } Index;
 
     void index_finalize(value v) {
         Index index = Index_val(v);
         delete index.cursor;
         delete index.index;
+        free(index.data_ptr);
     }
 
     void array_dims(value inp, size_t *width, size_t *height) {
@@ -288,39 +336,26 @@ extern "C" {
             params.num_setup_threads = 1;
         }
 
-        Table *table = construct_table_dense_float(_dataset, params);
+        float *data_ptr;
+        Table *table = construct_table_dense_float(_dataset, params, &data_ptr);
 
         int inp_num_probes = Val_long(_num_probes);
         int num_probes;
-        #if 0
         if (inp_num_probes == 0) {
             num_probes = find_num_probes(table, _dataset, l);
         } else {
             num_probes = inp_num_probes;
         }
-        #else
-        num_probes = inp_num_probes;
-        #endif
 
         Index res;
         res.index = table;
         res.dimension = dataset_dimension;
         res.num_probes = num_probes;
+        res.data_ptr = data_ptr;
         res.cursor = (table->construct_query_object(num_probes)).release();
 
         CAMLreturn(_wrap_index(res));
         END_CXX_EX
-    }
-
-    Point unpack_point(value _q, size_t width) {
-        camlassert(Tag_val(_q) == Double_array_tag);
-        camlassert(Wosize_val(_q) == width);
-        Point p;
-        p.resize(width);
-        for (size_t i=0; i < width; i++) {
-            p[i] = Double_field(_q, i);
-        }
-        return p;
     }
 
     value call_find_nearest_neighbor(value _index, value _q) {
@@ -330,7 +365,10 @@ extern "C" {
         Point q = unpack_point(_q, index.dimension);
         camlassert(q.size() == index.dimension);
         camlassert(q.size() > 0);
-        int32_t res = (index.cursor)->find_nearest_neighbor(q);
+        Key res;
+        GIL_RELEASE_BEGIN
+        res = (index.cursor)->find_nearest_neighbor(q);
+        GIL_RELEASE_END
         CAMLreturn(Val_long(res));
         END_CXX_EX
     }
@@ -342,11 +380,14 @@ extern "C" {
         int k = Val_int(_k);
         Point q = unpack_point(_q, index.dimension);
         camlassert(q.size() == index.dimension);
-        vector<int> res_vec;
+        vector<Key> res_vec;
+        GIL_RELEASE_BEGIN
         (index.cursor)->find_k_nearest_neighbors(q, k, &res_vec);
+        GIL_RELEASE_END
 
-        value res = caml_alloc(k, 0);
-        for (size_t i=0; i < k; i++ ){
+        size_t res_size = res_vec.size();
+        value res = caml_alloc(res_size, 0);
+        for (size_t i=0; i < res_size; i++ ){
             Store_field(res, i, res_vec[i]);
         }
 
@@ -357,7 +398,6 @@ extern "C" {
     value call_dimension(value _index) {
         CAMLparam1(_index);
         Index index = Index_val(_index);
-        printf("dim: %d l: %d\n", index.dimension, index.num_probes);
         long res = index.dimension;
         CAMLreturn(Val_long(res));
     }
