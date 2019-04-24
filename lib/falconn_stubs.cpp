@@ -48,6 +48,8 @@ typedef PlainArrayPointSet<Value> InnerPlainArrayPointSet;
 
 #define Index_val(v) (*((Index *) Data_custom_val(v)))
 
+#define MIN(a, b) ((a > b) ? b : a)
+
 #define xstr(a) str(a)
 #define str(a) #a
 #define camlassert(v) if (!(v)) caml_failwith("assert failed: " xstr(v))
@@ -375,9 +377,9 @@ extern "C" {
 
     value call_find_k_nearest_neighbors(value _index, value _k, value _q) {
         CAMLparam3(_index, _k, _q);
-        BEGIN_CXX_EX
         Index index = Index_val(_index);
-        int k = Val_int(_k);
+        int k = Int_val(_k);
+        BEGIN_CXX_EX
         Point q = unpack_point(_q, index.dimension);
         camlassert(q.size() == index.dimension);
         vector<Key> res_vec;
@@ -385,10 +387,10 @@ extern "C" {
         (index.cursor)->find_k_nearest_neighbors(q, k, &res_vec);
         GIL_RELEASE_END
 
-        size_t res_size = res_vec.size();
+        size_t res_size = MIN(res_vec.size(), k);
         value res = caml_alloc(res_size, 0);
         for (size_t i=0; i < res_size; i++ ){
-            Store_field(res, i, res_vec[i]);
+            Store_field(res, i, Val_int(res_vec[i]));
         }
 
         CAMLreturn(res);

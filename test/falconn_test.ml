@@ -27,7 +27,6 @@ let basic_test_multi _ =
   let neighbors = Falconn.find_k_nearest_neighbors index 2 p3 in 
   let v1 = Array.get neighbors 0 in 
   let v2 = Array.get neighbors 1 in 
-  let _ = Printf.printf "%d %d %d" (Array.length neighbors) v1 v2 in
   assert_equal (Array.length neighbors) 2;
   assert_bool "test 1" ((v1 == 2) || (v1 == 3));
   assert_bool "test 2" ((v2 == 2) || (v2 == 3))
