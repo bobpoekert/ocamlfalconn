@@ -78,6 +78,7 @@ Table *construct_table_dense_float(value points, const LSHConstructionParameters
     // defensive copy
     size_t data_size = dim_x * dim_y * sizeof(float);
     float *copied_data = (float *) malloc(data_size);
+    camlassert(copied_data != 0);
     memcpy(copied_data, inp_data, data_size);
 
     *res_ptr = copied_data;
