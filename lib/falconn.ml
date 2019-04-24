@@ -13,10 +13,13 @@ let create
   ?(dfunc=`Negative_inner_product)
   ?(is_dense=true)
   ?(l=20)
-  ?(num_probes=0) (* zero indicates that parameter search should be run to find the optimal value *)
+  ?(num_probes=0) 
   dataset = 
-  if num_probes != 0 && num_probes < l then
-    raise (Invalid_argument (Printf.sprintf "num_probes must be >= l: %d for %d" num_probes l));
+  let num_probes = if num_probes == 0 then l else if num_probes < l then 
+    raise (Invalid_argument (Printf.sprintf "num_probes must be >= l: %d for %d" num_probes l))
+    else if num_probes < 1 then 
+    raise (Invalid_argument "num_probes must be greater than zero")
+    else num_probes in
   _create dfunc is_dense l num_probes dataset
 
 let check_dim idx q = 
@@ -35,10 +38,3 @@ let find_k_nearest_neighbors idx k q =
 
 let input_of_array arr = 
   Array2.of_array float32 c_layout arr
-
-let rec _array1_to_array res inp len off =
-  if off < len then
-    (
-      Array.set res off (Array1.get inp off);
-      _array1_to_array res inp len (off + 1)
-    )

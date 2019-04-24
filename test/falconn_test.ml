@@ -6,7 +6,7 @@ let basic_test_dense_1 _ =
   let p2 = [| 0.6; 0.8; 0.0; 0.0 |] in 
   let p3 = [| 0.0; 0.0; 1.0; 0.0 |] in 
   let pmat = Falconn.input_of_array [| p1; p2; p3 |] in 
-  let index = Falconn.create ~l:4 ~num_probes:4 pmat in
+  let index = Falconn.create ~l:4 pmat in
   let res1 = Falconn.find_nearest_neighbor index p1 in 
   let res2 = Falconn.find_nearest_neighbor index p2 in 
   let res3 = Falconn.find_nearest_neighbor index p3 in 
@@ -30,6 +30,7 @@ let basic_test_multi _ =
   assert_equal (Array.length neighbors) 2;
   assert_bool "test 1" ((v1 == 2) || (v1 == 3));
   assert_bool "test 2" ((v2 == 2) || (v2 == 3))
+
 
 let suite = 
   "suite">::: [
